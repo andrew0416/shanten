@@ -1,4 +1,5 @@
 use pyo3::prelude::*;
+use pyo3::types::PyModule;
 
 mod shanten;
 
@@ -74,7 +75,7 @@ fn eval_discards_py(
 }
 
 #[pymodule]
-fn shanten_pyo(_py: Python, m: &PyModule) -> PyResult<()> {
+fn shanten_pyo(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(eval_hand_py, m)?)?;
     m.add_function(wrap_pyfunction!(eval_discards_py, m)?)?;
     Ok(())
