@@ -1,0 +1,15 @@
+[package]
+name = "shanten_pyo"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "shanten_pyo"
+crate-type = ["cdylib"]  # PyO3 확장 모듈용
+
+[dependencies]
+pyo3 = { version = "0.21", features = ["extension-module"] }
+flate2 = "1"
+
+[profile.release]
+opt-level = 3

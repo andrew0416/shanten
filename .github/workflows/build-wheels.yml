@@ -1,0 +1,35 @@
+name: Build Python wheels
+
+on:
+  workflow_dispatch:  # 수동 실행 가능
+  push:
+    tags:
+      - "v*"         # v로 시작하는 태그 푸시 시 자동 실행 (선택)
+
+jobs:
+  build-wheels:
+    runs-on: windows-latest   # Windows wheel 빌드 (win_amd64)
+
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install maturin
+        run: pip install maturin
+
+      - name: Build wheels
+        run: maturin build --release
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels
+          path: target/wheels/*.whl
