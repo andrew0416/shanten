@@ -165,6 +165,18 @@ pub struct HandMetrics {
     pub tanyao_distance: i8,
     /// [man, pin, sou]
     pub honitsu_distance: [i8; 3],
+    pub yakuhai_distance: i8,
+    pub pinfu_distance: i8,
+    pub toitoi_distance: i8,
+    /// [man, pin, sou]
+    pub chinitsu_distance: [i8; 3],
+    pub iipeko_distance: i8,
+    pub sanshoku_distance: i8,
+    pub ittsu_distance: i8,
+    pub chanta_distance: i8,
+    pub junchan_distance: i8,
+    pub honroutou_distance: i8,
+    pub shosangen_distance: i8,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -177,6 +189,18 @@ pub struct DiscardMetrics {
     pub tanyao_distance: i8,
     /// [man, pin, sou]
     pub honitsu_distance: [i8; 3],
+    pub yakuhai_distance: i8,
+    pub pinfu_distance: i8,
+    pub toitoi_distance: i8,
+    /// [man, pin, sou]
+    pub chinitsu_distance: [i8; 3],
+    pub iipeko_distance: i8,
+    pub sanshoku_distance: i8,
+    pub ittsu_distance: i8,
+    pub chanta_distance: i8,
+    pub junchan_distance: i8,
+    pub honroutou_distance: i8,
+    pub shosangen_distance: i8,
 }
 
 // ----- index helpers -----
@@ -210,6 +234,26 @@ fn is_sou(idx: usize) -> bool {
 #[inline]
 fn is_honor(idx: usize) -> bool {
     idx >= 27
+}
+
+#[inline]
+fn tile_index(suit: u8, rank: u8) -> usize {
+    suit as usize * 9 + rank as usize
+}
+
+#[inline]
+fn is_suit_tile(idx: usize) -> bool {
+    idx < 27
+}
+
+#[inline]
+fn rank(idx: usize) -> usize {
+    idx % 9
+}
+
+#[inline]
+fn is_middle(idx: usize) -> bool {
+    is_suit_tile(idx) && matches!(rank(idx), 3..=5)
 }
 
 /// suit: 0=만, 1=통, 2=삭
@@ -301,6 +345,217 @@ pub fn honitsu_distance_for_suit(tiles: &[u8; 34], suit: u8) -> i8 {
     off_color as i8 + shanten_filtered
 }
 
+// ----- yaku proxy distances -----
+
+#[inline]
+pub fn clamp_need(v: i8) -> i8 {
+    v.clamp(0, 14)
+}
+
+#[inline]
+pub fn sequence_need(tiles: &[u8; 34], suit: u8, start: u8) -> i8 {
+    let base = suit as usize * 9 + start as usize;
+    clamp_need(
+        (1_i8 - tiles[base] as i8).max(0)
+            + (1_i8 - tiles[base + 1] as i8).max(0)
+            + (1_i8 - tiles[base + 2] as i8).max(0),
+    )
+}
+
+pub fn best_pair_need<F>(tiles: &[u8; 34], allowed: F) -> i8
+where
+    F: Fn(usize) -> bool,
+{
+    tiles
+        .iter()
+        .enumerate()
+        .filter(|&(i, _)| allowed(i))
+        .map(|(_, &c)| clamp_need(2 - c as i8))
+        .min()
+        .unwrap_or(2)
+}
+
+pub fn best_n_triplet_need(tiles: &[u8; 34], n: usize) -> i8 {
+    let mut needs: Vec<i8> = tiles.iter().map(|&c| clamp_need(3 - c as i8)).collect();
+    needs.sort_unstable();
+    clamp_need(needs.into_iter().take(n).sum())
+}
+
+#[must_use]
+pub fn yakuhai_distance(tiles: &[u8; 34]) -> i8 {
+    // Current Python API has no bakaze/jikaze. Add those winds here when the API is extended.
+    clamp_need((31..=33).map(|i| 3 - tiles[i] as i8).min().unwrap_or(3))
+}
+
+#[must_use]
+pub fn pinfu_distance(tiles: &[u8; 34]) -> i8 {
+    let mut seq_needs = Vec::with_capacity(21);
+    for suit in 0..3 {
+        for start in 0..=6 {
+            let base = suit * 9 + start;
+            let have = (tiles[base] > 0) as i8
+                + (tiles[base + 1] > 0) as i8
+                + (tiles[base + 2] > 0) as i8;
+            seq_needs.push(clamp_need(3 - have));
+        }
+    }
+    seq_needs.sort_unstable();
+    let best_4_sequence_need: i8 = seq_needs.into_iter().take(4).sum();
+    let pair_need = best_pair_need(tiles, |i| !is_honor(i));
+    clamp_need(best_4_sequence_need + pair_need)
+}
+
+#[must_use]
+pub fn toitoi_distance(tiles: &[u8; 34]) -> i8 {
+    let mut best = i8::MAX;
+    for pair_idx in 0..34 {
+        let pair_need = clamp_need(2 - tiles[pair_idx] as i8);
+        let mut triplet_needs: Vec<i8> = tiles
+            .iter()
+            .enumerate()
+            .filter(|&(i, _)| i != pair_idx)
+            .map(|(_, &c)| clamp_need(3 - c as i8))
+            .collect();
+        triplet_needs.sort_unstable();
+        let triplet_need: i8 = triplet_needs.into_iter().take(4).sum();
+        best = best.min(pair_need + triplet_need);
+    }
+    clamp_need(best)
+}
+
+#[must_use]
+pub fn chinitsu_distance_for_suit(tiles: &[u8; 34], suit: u8) -> i8 {
+    let mut filtered = [0u8; 34];
+    let mut off_suit_count: u8 = 0;
+
+    for (i, &c) in tiles.iter().enumerate() {
+        if c == 0 {
+            continue;
+        }
+        if is_main_suit(i, suit) {
+            filtered[i] = c;
+        } else {
+            off_suit_count = off_suit_count.saturating_add(c);
+        }
+    }
+
+    let count_f: u16 = filtered.iter().map(|&x| x as u16).sum();
+    if count_f == 0 {
+        return clamp_need(off_suit_count as i8 + 8);
+    }
+
+    let len_div3_f = (count_f / 3) as u8;
+    clamp_need(off_suit_count as i8 + calc_all(&filtered, len_div3_f))
+}
+
+#[must_use]
+pub fn iipeko_distance(tiles: &[u8; 34]) -> i8 {
+    let mut best = i8::MAX;
+    for suit in 0..3 {
+        for start in 0..=6 {
+            let base = suit * 9 + start;
+            let need = clamp_need(2 - tiles[base] as i8)
+                + clamp_need(2 - tiles[base + 1] as i8)
+                + clamp_need(2 - tiles[base + 2] as i8);
+            best = best.min(need);
+        }
+    }
+    clamp_need(best)
+}
+
+#[must_use]
+pub fn sanshoku_distance(tiles: &[u8; 34]) -> i8 {
+    let mut best = i8::MAX;
+    for start in 0..=6 {
+        let need: i8 = (0..3)
+            .map(|suit| sequence_need(tiles, suit, start as u8))
+            .sum();
+        best = best.min(need);
+    }
+    clamp_need(best)
+}
+
+#[must_use]
+pub fn ittsu_distance(tiles: &[u8; 34]) -> i8 {
+    let mut best = i8::MAX;
+    for suit in 0..3 {
+        let need = sequence_need(tiles, suit, 0)
+            + sequence_need(tiles, suit, 3)
+            + sequence_need(tiles, suit, 6);
+        best = best.min(need);
+    }
+    clamp_need(best)
+}
+
+#[must_use]
+pub fn chanta_distance(tiles: &[u8; 34]) -> i8 {
+    let bad_middle_count: i8 = tiles
+        .iter()
+        .enumerate()
+        .filter(|&(i, _)| is_middle(i))
+        .map(|(_, &c)| c as i8)
+        .sum();
+    let sequence_terminal_need = (0..3)
+        .flat_map(|suit| [sequence_need(tiles, suit, 0), sequence_need(tiles, suit, 6)])
+        .min()
+        .unwrap_or(3);
+    clamp_need(bad_middle_count + sequence_terminal_need)
+}
+
+#[must_use]
+pub fn junchan_distance(tiles: &[u8; 34]) -> i8 {
+    let honor_count: i8 = tiles[27..].iter().map(|&c| c as i8).sum();
+    clamp_need(honor_count + chanta_distance(tiles))
+}
+
+#[must_use]
+pub fn honroutou_distance(tiles: &[u8; 34]) -> i8 {
+    clamp_need(
+        tiles
+            .iter()
+            .enumerate()
+            .filter(|&(i, _)| is_suit_tile(i) && !is_terminal_or_honor(i))
+            .map(|(_, &c)| c as i8)
+            .sum(),
+    )
+}
+
+#[must_use]
+pub fn shosangen_distance(tiles: &[u8; 34]) -> i8 {
+    let mut best = i8::MAX;
+    for pair_dragon in 31..=33 {
+        let mut need = clamp_need(2 - tiles[pair_dragon] as i8);
+        for triplet_dragon in 31..=33 {
+            if triplet_dragon != pair_dragon {
+                need += clamp_need(3 - tiles[triplet_dragon] as i8);
+            }
+        }
+        best = best.min(need);
+    }
+    clamp_need(best)
+}
+
+fn yaku_distances(tiles: &[u8; 34]) -> ([i8; 3], i8, i8, i8, i8, i8, i8, i8, i8, i8, i8) {
+    let chinitsu = [
+        chinitsu_distance_for_suit(tiles, 0),
+        chinitsu_distance_for_suit(tiles, 1),
+        chinitsu_distance_for_suit(tiles, 2),
+    ];
+    (
+        chinitsu,
+        yakuhai_distance(tiles),
+        pinfu_distance(tiles),
+        toitoi_distance(tiles),
+        iipeko_distance(tiles),
+        sanshoku_distance(tiles),
+        ittsu_distance(tiles),
+        chanta_distance(tiles),
+        junchan_distance(tiles),
+        honroutou_distance(tiles),
+        shosangen_distance(tiles),
+    )
+}
+
 // ----- high-level eval -----
 
 #[must_use]
@@ -317,6 +572,19 @@ pub fn eval_hand(tiles: &[u8; 34]) -> HandMetrics {
         honitsu_distance_for_suit(tiles, 1),
         honitsu_distance_for_suit(tiles, 2),
     ];
+    let (
+        chinitsu,
+        yakuhai,
+        pinfu,
+        toitoi,
+        iipeko,
+        sanshoku,
+        ittsu,
+        chanta,
+        junchan,
+        honroutou,
+        shosangen,
+    ) = yaku_distances(tiles);
 
     HandMetrics {
         normal_shanten: normal,
@@ -324,6 +592,17 @@ pub fn eval_hand(tiles: &[u8; 34]) -> HandMetrics {
         kokushi_shanten: kokushi,
         tanyao_distance: tanyao,
         honitsu_distance: honitsu,
+        yakuhai_distance: yakuhai,
+        pinfu_distance: pinfu,
+        toitoi_distance: toitoi,
+        chinitsu_distance: chinitsu,
+        iipeko_distance: iipeko,
+        sanshoku_distance: sanshoku,
+        ittsu_distance: ittsu,
+        chanta_distance: chanta,
+        junchan_distance: junchan,
+        honroutou_distance: honroutou,
+        shosangen_distance: shosangen,
     }
 }
 
@@ -352,6 +631,19 @@ pub fn eval_discards(tiles: &[u8; 34]) -> Vec<DiscardMetrics> {
             honitsu_distance_for_suit(&tmp, 1),
             honitsu_distance_for_suit(&tmp, 2),
         ];
+        let (
+            chinitsu,
+            yakuhai,
+            pinfu,
+            toitoi,
+            iipeko,
+            sanshoku,
+            ittsu,
+            chanta,
+            junchan,
+            honroutou,
+            shosangen,
+        ) = yaku_distances(&tmp);
 
         result.push(DiscardMetrics {
             tile_index: i as u8,
@@ -360,6 +652,17 @@ pub fn eval_discards(tiles: &[u8; 34]) -> Vec<DiscardMetrics> {
             kokushi_shanten: kokushi,
             tanyao_distance: tanyao,
             honitsu_distance: honitsu,
+            yakuhai_distance: yakuhai,
+            pinfu_distance: pinfu,
+            toitoi_distance: toitoi,
+            chinitsu_distance: chinitsu,
+            iipeko_distance: iipeko,
+            sanshoku_distance: sanshoku,
+            ittsu_distance: ittsu,
+            chanta_distance: chanta,
+            junchan_distance: junchan,
+            honroutou_distance: honroutou,
+            shosangen_distance: shosangen,
         });
     }
 
