@@ -8,6 +8,15 @@ fn triple_py(py: Python<'_>, values: [i8; 3]) -> PyResult<Py<PyAny>> {
     Ok(PyTuple::new(py, values)?.into_any().unbind())
 }
 
+fn validate_wind(name: &str, wind: Option<u8>) -> PyResult<Option<u8>> {
+    match wind {
+        Some(0..=3) | None => Ok(wind),
+        Some(_) => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "{name} must be 0..3 (east=0, south=1, west=2, north=3) or None"
+        ))),
+    }
+}
+
 /// Python에서 손 메트릭 평가
 ///
 /// Returns a 16-item tuple:
@@ -15,7 +24,13 @@ fn triple_py(py: Python<'_>, values: [i8; 3]) -> PyResult<Py<PyAny>> {
 ///    yakuhai, pinfu, toitoi, (chinitsu_man, chinitsu_pin, chinitsu_sou),
 ///    iipeko, sanshoku, ittsu, chanta, junchan, honroutou, shosangen)
 #[pyfunction]
-fn eval_hand_py(py: Python<'_>, hand: Vec<u8>) -> PyResult<Py<PyAny>> {
+#[pyo3(signature = (hand, bakaze=None, jikaze=None))]
+fn eval_hand_py(
+    py: Python<'_>,
+    hand: Vec<u8>,
+    bakaze: Option<u8>,
+    jikaze: Option<u8>,
+) -> PyResult<Py<PyAny>> {
     if hand.len() != 34 {
         return Err(pyo3::exceptions::PyValueError::new_err(
             "hand must be length 34 (0..33 tile counts)",
@@ -27,7 +42,9 @@ fn eval_hand_py(py: Python<'_>, hand: Vec<u8>) -> PyResult<Py<PyAny>> {
         tiles[i] = v;
     }
 
-    let m = shanten::eval_hand(&tiles);
+    let bakaze = validate_wind("bakaze", bakaze)?;
+    let jikaze = validate_wind("jikaze", jikaze)?;
+    let m = shanten::eval_hand(&tiles, bakaze, jikaze);
     let values = vec![
         m.normal_shanten,
         m.chiitoi_shanten,
@@ -75,7 +92,13 @@ fn eval_hand_py(py: Python<'_>, hand: Vec<u8>) -> PyResult<Py<PyAny>> {
 ///    yakuhai, pinfu, toitoi, (c_man,c_pin,c_sou),
 ///    iipeko, sanshoku, ittsu, chanta, junchan, honroutou, shosangen)
 #[pyfunction]
-fn eval_discards_py(py: Python<'_>, hand: Vec<u8>) -> PyResult<Py<PyAny>> {
+#[pyo3(signature = (hand, bakaze=None, jikaze=None))]
+fn eval_discards_py(
+    py: Python<'_>,
+    hand: Vec<u8>,
+    bakaze: Option<u8>,
+    jikaze: Option<u8>,
+) -> PyResult<Py<PyAny>> {
     if hand.len() != 34 {
         return Err(pyo3::exceptions::PyValueError::new_err(
             "hand must be length 34 (0..33 tile counts)",
@@ -87,7 +110,9 @@ fn eval_discards_py(py: Python<'_>, hand: Vec<u8>) -> PyResult<Py<PyAny>> {
         tiles[i] = v;
     }
 
-    let dm = shanten::eval_discards(&tiles);
+    let bakaze = validate_wind("bakaze", bakaze)?;
+    let jikaze = validate_wind("jikaze", jikaze)?;
+    let dm = shanten::eval_discards(&tiles, bakaze, jikaze);
     let mut out = Vec::with_capacity(dm.len());
 
     for d in dm {

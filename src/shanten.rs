@@ -237,8 +237,8 @@ fn is_honor(idx: usize) -> bool {
 }
 
 #[inline]
-fn tile_index(suit: u8, rank: u8) -> usize {
-    suit as usize * 9 + rank as usize
+fn wind_tile_index(wind: u8) -> usize {
+    27 + wind as usize
 }
 
 #[inline]
@@ -382,9 +382,29 @@ pub fn best_n_triplet_need(tiles: &[u8; 34], n: usize) -> i8 {
 }
 
 #[must_use]
-pub fn yakuhai_distance(tiles: &[u8; 34]) -> i8 {
-    // Current Python API has no bakaze/jikaze. Add those winds here when the API is extended.
-    clamp_need((31..=33).map(|i| 3 - tiles[i] as i8).min().unwrap_or(3))
+pub fn yakuhai_distance(tiles: &[u8; 34], bakaze: Option<u8>, jikaze: Option<u8>) -> i8 {
+    let mut candidates = [31usize, 32, 33, 34, 34];
+    let mut len = 3;
+
+    if let Some(wind @ 0..=3) = bakaze {
+        candidates[len] = wind_tile_index(wind);
+        len += 1;
+    }
+    if let Some(wind @ 0..=3) = jikaze {
+        let idx = wind_tile_index(wind);
+        if !candidates[..len].contains(&idx) {
+            candidates[len] = idx;
+            len += 1;
+        }
+    }
+
+    clamp_need(
+        candidates[..len]
+            .iter()
+            .map(|&i| 3 - tiles[i] as i8)
+            .min()
+            .unwrap_or(3),
+    )
 }
 
 #[must_use]
@@ -535,7 +555,11 @@ pub fn shosangen_distance(tiles: &[u8; 34]) -> i8 {
     clamp_need(best)
 }
 
-fn yaku_distances(tiles: &[u8; 34]) -> ([i8; 3], i8, i8, i8, i8, i8, i8, i8, i8, i8, i8) {
+fn yaku_distances(
+    tiles: &[u8; 34],
+    bakaze: Option<u8>,
+    jikaze: Option<u8>,
+) -> ([i8; 3], i8, i8, i8, i8, i8, i8, i8, i8, i8, i8) {
     let chinitsu = [
         chinitsu_distance_for_suit(tiles, 0),
         chinitsu_distance_for_suit(tiles, 1),
@@ -543,7 +567,7 @@ fn yaku_distances(tiles: &[u8; 34]) -> ([i8; 3], i8, i8, i8, i8, i8, i8, i8, i8,
     ];
     (
         chinitsu,
-        yakuhai_distance(tiles),
+        yakuhai_distance(tiles, bakaze, jikaze),
         pinfu_distance(tiles),
         toitoi_distance(tiles),
         iipeko_distance(tiles),
@@ -559,7 +583,7 @@ fn yaku_distances(tiles: &[u8; 34]) -> ([i8; 3], i8, i8, i8, i8, i8, i8, i8, i8,
 // ----- high-level eval -----
 
 #[must_use]
-pub fn eval_hand(tiles: &[u8; 34]) -> HandMetrics {
+pub fn eval_hand(tiles: &[u8; 34], bakaze: Option<u8>, jikaze: Option<u8>) -> HandMetrics {
     let count: u16 = tiles.iter().map(|&x| x as u16).sum();
     let len_div3: u8 = (count / 3) as u8;
 
@@ -584,7 +608,7 @@ pub fn eval_hand(tiles: &[u8; 34]) -> HandMetrics {
         junchan,
         honroutou,
         shosangen,
-    ) = yaku_distances(tiles);
+    ) = yaku_distances(tiles, bakaze, jikaze);
 
     HandMetrics {
         normal_shanten: normal,
@@ -607,7 +631,11 @@ pub fn eval_hand(tiles: &[u8; 34]) -> HandMetrics {
 }
 
 #[must_use]
-pub fn eval_discards(tiles: &[u8; 34]) -> Vec<DiscardMetrics> {
+pub fn eval_discards(
+    tiles: &[u8; 34],
+    bakaze: Option<u8>,
+    jikaze: Option<u8>,
+) -> Vec<DiscardMetrics> {
     let mut result = Vec::new();
 
     for i in 0..34 {
@@ -643,7 +671,7 @@ pub fn eval_discards(tiles: &[u8; 34]) -> Vec<DiscardMetrics> {
             junchan,
             honroutou,
             shosangen,
-        ) = yaku_distances(&tmp);
+        ) = yaku_distances(&tmp, bakaze, jikaze);
 
         result.push(DiscardMetrics {
             tile_index: i as u8,
